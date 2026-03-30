@@ -10,7 +10,7 @@ st.set_page_config(page_title="Mein Rezeptbuch", page_icon="🍳")
 def check_password():
     """Gibt True zurück, wenn der Benutzer das korrekte Passwort eingegeben hat."""
     if "password_correct" not in st.session_state:
-        # Initialisierung des Login-Status
+        # Initialisierung
         st.session_state["password_correct"] = False
 
     if st.session_state["password_correct"]:
@@ -66,7 +66,7 @@ if check_password():
         supabase_url = None
         supabase_key = None
 
-    # Funktion zum Laden der Rezepte aus der Datenbank
+    # Funktion zum Laden der Rezepte
     def lade_rezepte():
         if supabase_url and supabase_key:
             try:
@@ -81,11 +81,11 @@ if check_password():
         else:
             st.session_state.rezepte = []
 
-    # Daten beim Start laden
+    # Initialisierung
     if 'rezepte' not in st.session_state:
         lade_rezepte()
 
-    # Design der Überschrift
+    # Titel Design
     st.markdown("""
         <style>
         .klassische-ueberschrift {
@@ -104,7 +104,7 @@ if check_password():
         <div class="klassische-ueberschrift">Mein Rezeptbuch</div>
     """, unsafe_allow_html=True)
 
-    # Eingabebereich für neue Rezepte
+    # Eingabe
     neues_rezept = st.text_area("Neues Rezept eintragen:", height=150)
 
     if st.button("Rezept formatieren & speichern"):
@@ -118,18 +118,11 @@ if check_password():
                     JSON Format: {{"titel": "...", "text": "..."}}
                     Text: {neues_rezept}
                     """
-                    # Nutzung von gemini-2.0-flash für bessere Verfügbarkeit und Performance
-                    response = client.models.generate_content(model='gemini-2.0-flash', contents=prompt)
+                    response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
                     
                     antwort_text = response.text.strip()
-                    # Bereinigung von Markdown-Code-Blöcken in der KI-Antwort
-                    if antwort_text.startswith("```"):
-                        lines = antwort_text.splitlines()
-                        if lines[0].startswith("```"):
-                            lines = lines[1:]
-                        if lines[-1].startswith("```"):
-                            lines = lines[:-1]
-                        antwort_text = "\n".join(lines).strip()
+                    if antwort_text.startswith("```json"):
+                        antwort_text = antwort_text.replace("```json", "").replace("```", "").strip()
                     
                     rezept_daten = json.loads(antwort_text)
                     
@@ -142,18 +135,13 @@ if check_password():
                         else:
                             st.error(f"Datenbank-Fehler: {db_res.text}")
                 except Exception as e:
-                    if "429" in str(e):
-                        st.error("Limit erreicht. Bitte kurz warten oder morgen wieder versuchen.")
-                    elif "404" in str(e):
-                        st.error("Das KI-Modell wurde nicht gefunden. Versuche es bitte gleich noch einmal.")
-                    else:
-                        st.error(f"Fehler: {e}")
+                    st.error(f"Fehler: {e}")
         else:
             st.warning("Bitte Text eingeben.")
 
     st.divider()
 
-    # Liste der vorhandenen Rezepte anzeigen
+    # Anzeige
     if st.session_state.rezepte:
         for i, rezept in enumerate(st.session_state.rezepte):
             db_id = rezept.get('id')
@@ -165,7 +153,6 @@ if check_password():
                 if edit_key not in st.session_state: st.session_state[edit_key] = False
 
                 if st.session_state[edit_key]:
-                    # Editor für Titel und Text
                     n_titel = st.text_input("Titel:", value=titel, key=f"ti_{i}")
                     n_text = st.text_area("Inhalt:", value=inhalt, height=250, key=f"te_{i}")
                     c1, c2 = st.columns([1, 1])
@@ -181,14 +168,13 @@ if check_password():
                             st.session_state[edit_key] = False
                             st.rerun()
                 else:
-                    # Normale Textanzeige
                     st.markdown(inhalt)
                     
                     del_key = f"del_{i}"
                     if del_key not in st.session_state: st.session_state[del_key] = False
 
                     if st.session_state[del_key]:
-                        st.warning("Löschen bestätigen?")
+                        st.warning("Löschen?")
                         dc1, dc2 = st.columns([1, 1])
                         with dc1:
                             if st.button("Ja", key=f"y_{i}"):
@@ -201,7 +187,6 @@ if check_password():
                                 st.session_state[del_key] = False
                                 st.rerun()
                     else:
-                        # Buttons für Bearbeiten und Löschen
                         b1, b2, _ = st.columns([1, 1, 2])
                         with b1:
                             if st.button("✎", key=f"eb_{i}"):
@@ -212,4 +197,4 @@ if check_password():
                                 st.session_state[del_key] = True
                                 st.rerun()
     else:
-        st.info("Noch keine Rezepte vorhanden.")
+        st.info("Noch keine Rezepte da.")
