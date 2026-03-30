@@ -118,7 +118,8 @@ if check_password():
                     JSON Format: {{"titel": "...", "text": "..."}}
                     Text: {neues_rezept}
                     """
-                    response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
+                    # Umstellung auf gemini-1.5-flash für höhere Quoten-Limits
+                    response = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
                     
                     antwort_text = response.text.strip()
                     if antwort_text.startswith("```json"):
@@ -135,7 +136,10 @@ if check_password():
                         else:
                             st.error(f"Datenbank-Fehler: {db_res.text}")
                 except Exception as e:
-                    st.error(f"Fehler: {e}")
+                    if "429" in str(e):
+                        st.error("Das tägliche Limit der KI ist erreicht. Bitte versuche es morgen wieder oder wechsle den API-Plan.")
+                    else:
+                        st.error(f"Fehler: {e}")
         else:
             st.warning("Bitte Text eingeben.")
 
