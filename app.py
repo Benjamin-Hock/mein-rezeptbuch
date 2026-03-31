@@ -120,7 +120,7 @@ if check_password():
 
                         REGELN:
                         - Antworte NUR mit validem JSON.
-                        - Nutze EXAKT die Überschriften '##Titel', '**Zutaten:**' und '**Zubereitung:**' (fett mit Doppelpunkt).
+                        - Nutze EXAKT die Überschriften '## Titel', '**Zutaten:**' und '**Zubereitung:**' (fett mit Doppelpunkt).
                         - Kurzer Titel (max 4 Wörter), keine Floskeln am Ende, Markdown Struktur.
                         - Nutze '*' für die Zutatenliste und Zahlen '1.', '2.' für die Zubereitungsschritte.
                         - Keine Floskeln wie 'Guten Appetit' oder Einleitungssätze.
