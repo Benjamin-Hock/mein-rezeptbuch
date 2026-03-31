@@ -107,9 +107,9 @@ if check_password():
     col_actions1, col_actions2 = st.columns([1, 1])
     
     with col_actions1:
-        if st.button("✨ KI-Formatierung & Speichern"):
+        if st.button("KI-Formatierung & Speichern"):
             if neues_rezept and client:
-                with st.spinner("KI bringt Ordnung in das Chaos..."):
+                with st.spinner("Rezept wird formatiert..."):
                     success = False
                     for i in range(5):
                         try:
@@ -124,9 +124,11 @@ if check_password():
 
                             REGELN:
                             - Antworte NUR mit validem JSON.
+                            - Formatiere diesen Text zu einem kompakten Rezept.
+                            - Kurzer Titel (max 4 Wörter), keine Floskeln am Ende, Markdown Struktur.
                             - Nutze EXAKT die Überschriften '**Zutaten:**' und '**Zubereitung:**' (fett mit Doppelpunkt).
                             - Nutze '*' für die Zutatenliste und Zahlen '1.', '2.' für die Zubereitungsschritte.
-                            - Keine netten Sätze oder Kommentare am Ende.
+                            - Keine Sätze oder Kommentare am Ende, wie Guten Appetit.
 
                             INPUT:
                             {neues_rezept}
@@ -165,7 +167,7 @@ if check_password():
                 st.warning("Bitte erst Text eingeben.")
 
     with col_actions2:
-        if st.button("💾 Ohne KI direkt speichern"):
+        if st.button("Direkt speichern"):
             if neues_rezept:
                 zeilen = neues_rezept.split('\n')
                 titel_manuell = zeilen[0][:30] if zeilen else "Neues Rezept"
