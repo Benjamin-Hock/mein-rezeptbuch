@@ -142,6 +142,9 @@ if check_password():
                         
                         rezept_daten = json.loads(raw_text)
                         
+                        # Neue Rezepte landen standardmäßig in der Kategorie 'Allgemein'
+                        rezept_daten["kategorie"] = "Allgemein"
+                        
                         if supabase_url:
                             url = f"{supabase_url}/rest/v1/rezepte"
                             db_res = requests.post(url, headers=supabase_headers, json=rezept_daten)
@@ -162,7 +165,8 @@ if check_password():
             if neues_rezept:
                 zeilen = neues_rezept.split('\n')
                 titel_manuell = zeilen[0][:30] if zeilen else "Neues Rezept"
-                rezept_daten = {"titel": titel_manuell, "text": neues_rezept}
+                # Auch hier Kategorie setzen
+                rezept_daten = {"titel": titel_manuell, "text": neues_rezept, "kategorie": "Allgemein"}
                 
                 if supabase_url:
                     url = f"{supabase_url}/rest/v1/rezepte"
@@ -176,66 +180,103 @@ if check_password():
 
     st.divider()
 
-    # Anzeige der Rezepte
-    if st.session_state.rezepte:
-        for i, rezept in enumerate(st.session_state.rezepte):
-            db_id = rezept.get('id')
-            titel = rezept.get('titel', 'Unbekannt')
-            inhalt = rezept.get('text', '')
+    # --- Hilfsfunktion zum Anzeigen eines einzelnen Rezepts ---
+    def zeige_rezept(rezept, is_backen=False):
+        db_id = rezept.get('id')
+        titel = rezept.get('titel', 'Unbekannt')
+        inhalt = rezept.get('text', '')
 
-            # Eindeutige Keys basierend auf der DB-ID statt dem Listen-Index
-            edit_key = f"edit_state_{db_id}"
-            del_key = f"del_state_{db_id}"
+        # Eindeutige Keys basierend auf der DB-ID
+        edit_key = f"edit_state_{db_id}"
+        del_key = f"del_state_{db_id}"
 
-            with st.expander(titel):
-                if edit_key not in st.session_state: st.session_state[edit_key] = False
-                if del_key not in st.session_state: st.session_state[del_key] = False
+        with st.expander(titel):
+            if edit_key not in st.session_state: st.session_state[edit_key] = False
+            if del_key not in st.session_state: st.session_state[del_key] = False
 
-                if st.session_state[edit_key]:
-                    n_titel = st.text_input("Titel bearbeiten:", value=titel, key=f"ti_{db_id}")
-                    n_text = st.text_area("Inhalt bearbeiten:", value=inhalt, height=250, key=f"te_{db_id}")
-                    c1, c2 = st.columns([1, 1])
-                    with c1:
-                        if st.button("Speichern", key=f"s_{db_id}"):
-                            if supabase_url and db_id:
-                                url = f"{supabase_url}/rest/v1/rezepte?id=eq.{db_id}"
-                                requests.patch(url, headers=supabase_headers, json={"titel": n_titel, "text": n_text})
-                                lade_rezepte()
-                                st.session_state[edit_key] = False
-                                st.rerun()
-                    with c2:
-                        if st.button("Abbrechen", key=f"c_{db_id}"):
+            # Bearbeitungsmodus
+            if st.session_state[edit_key]:
+                n_titel = st.text_input("Titel bearbeiten:", value=titel, key=f"ti_{db_id}")
+                n_text = st.text_area("Inhalt bearbeiten:", value=inhalt, height=250, key=f"te_{db_id}")
+                c1, c2 = st.columns([1, 1])
+                with c1:
+                    if st.button("Speichern", key=f"s_{db_id}"):
+                        if supabase_url and db_id:
+                            url = f"{supabase_url}/rest/v1/rezepte?id=eq.{db_id}"
+                            requests.patch(url, headers=supabase_headers, json={"titel": n_titel, "text": n_text})
+                            lade_rezepte()
                             st.session_state[edit_key] = False
                             st.rerun()
+                with c2:
+                    if st.button("Abbrechen", key=f"c_{db_id}"):
+                        st.session_state[edit_key] = False
+                        st.rerun()
+            
+            # Anzeigemodus
+            else:
+                st.markdown(inhalt)
+                
+                # Löschen bestätigen
+                if st.session_state[del_key]:
+                    st.warning("Wirklich löschen?")
+                    dc1, dc2 = st.columns([1, 1])
+                    with dc1:
+                        if st.button("Ja, löschen", key=f"y_{db_id}"):
+                            if supabase_url and db_id:
+                                url = f"{supabase_url}/rest/v1/rezepte?id=eq.{db_id}"
+                                requests.delete(url, headers=supabase_headers)
+                                # Status-Keys aufräumen
+                                if edit_key in st.session_state: del st.session_state[edit_key]
+                                if del_key in st.session_state: del st.session_state[del_key]
+                                lade_rezepte()
+                                st.rerun()
+                    with dc2:
+                        if st.button("Nein", key=f"n_{db_id}"):
+                            st.session_state[del_key] = False
+                            st.rerun()
+                
+                # Standard Aktions-Buttons
                 else:
-                    st.markdown(inhalt)
+                    b1, b2, b3 = st.columns([1, 1, 2])
+                    with b1:
+                        if st.button("✎", key=f"eb_{db_id}"):
+                            st.session_state[edit_key] = True
+                            st.rerun()
+                    with b2:
+                        if st.button("🗑\uFE0E", key=f"db_{db_id}"):
+                            st.session_state[del_key] = True
+                            st.rerun()
+                    with b3:
+                        # Logik für das Verschieben zwischen den Ordnern
+                        btn_label = "↑ Zurück zu Kochen" if is_backen else "↓ In 'Backen' verschieben"
+                        ziel_kategorie = "Allgemein" if is_backen else "Backen"
+                        
+                        if st.button(btn_label, key=f"mv_{db_id}"):
+                            if supabase_url and db_id:
+                                url = f"{supabase_url}/rest/v1/rezepte?id=eq.{db_id}"
+                                requests.patch(url, headers=supabase_headers, json={"kategorie": ziel_kategorie})
+                                lade_rezepte()
+                                st.rerun()
+
+    # --- Anzeige der Rezepte nach Kategorien getrennt ---
+    if st.session_state.rezepte:
+        # Rezepte sortieren
+        rezepte_allgemein = [r for r in st.session_state.rezepte if r.get('kategorie') != 'Backen']
+        rezepte_backen = [r for r in st.session_state.rezepte if r.get('kategorie') == 'Backen']
+
+        # 1. Normale Rezepte anzeigen
+        for rezept in rezepte_allgemein:
+            zeige_rezept(rezept, is_backen=False)
+            
+        st.write("") # Etwas Abstand
+        
+        # 2. Backen-Ordner anzeigen
+        with st.expander("🍰 Backen-Ordner", expanded=False):
+            if not rezepte_backen:
+                st.info("Noch keine Backrezepte vorhanden.")
+            else:
+                for rezept in rezepte_backen:
+                    zeige_rezept(rezept, is_backen=True)
                     
-                    if st.session_state[del_key]:
-                        st.warning("Wirklich löschen?")
-                        dc1, dc2 = st.columns([1, 1])
-                        with dc1:
-                            if st.button("Ja, löschen", key=f"y_{db_id}"):
-                                if supabase_url and db_id:
-                                    url = f"{supabase_url}/rest/v1/rezepte?id=eq.{db_id}"
-                                    requests.delete(url, headers=supabase_headers)
-                                    # Status-Keys aufräumen
-                                    if edit_key in st.session_state: del st.session_state[edit_key]
-                                    if del_key in st.session_state: del st.session_state[del_key]
-                                    lade_rezepte()
-                                    st.rerun()
-                        with dc2:
-                            if st.button("Nein", key=f"n_{db_id}"):
-                                st.session_state[del_key] = False
-                                st.rerun()
-                    else:
-                        b1, b2, _ = st.columns([1, 1, 3])
-                        with b1:
-                            if st.button("✎", key=f"eb_{db_id}"):
-                                st.session_state[edit_key] = True
-                                st.rerun()
-                        with b2:
-                            if st.button("🗑\uFE0E", key=f"db_{db_id}"):
-                                st.session_state[del_key] = True
-                                st.rerun()
     else:
         st.info("Noch keine Rezepte vorhanden.")
