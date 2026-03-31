@@ -9,7 +9,7 @@ st.set_page_config(page_title="Mein Rezeptbuch", page_icon="🍳")
 
 # Einfache Passwort-Abfrage für den privaten Zugriff
 def check_password():
-    """Gibt True zurück, wenn das korrekte Passwort eingegeben wurde."""
+    """Prüft, ob das korrekte Passwort eingegeben wurde."""
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
 
@@ -32,7 +32,6 @@ def check_password():
     
     password = st.text_input("Bitte Passwort eingeben:", type="password")
     if st.button("Anmelden"):
-        # Nutzt das Passwort aus den Secrets oder 'admin' als Standard
         if password == st.secrets.get("APP_PASSWORD", "admin"):
             st.session_state["password_correct"] = True
             st.rerun()
@@ -40,9 +39,9 @@ def check_password():
             st.error("Falsches Passwort")
     return False
 
-# Hauptprogramm nach erfolgreichem Login
+# Hauptprogramm nach Login
 if check_password():
-    # Client mit dem API-Key aus den Secrets initialisieren
+    # Client mit dem API-Key initialisieren
     try:
         client = genai.Client(api_key=st.secrets.get("GEMINI_API_KEY", ""))
     except Exception as e:
@@ -82,7 +81,7 @@ if check_password():
     if 'rezepte' not in st.session_state:
         lade_rezepte()
 
-    # Optische Gestaltung der Überschrift
+    # Optische Gestaltung
     st.markdown("""
         <style>
         .klassische-ueberschrift {
@@ -101,7 +100,6 @@ if check_password():
         <div class="klassische-ueberschrift">Mein Rezeptbuch</div>
     """, unsafe_allow_html=True)
 
-    # Eingabebereich
     neues_rezept = st.text_area("Neues Rezept eintragen:", height=150, placeholder="Zutaten und Schritte hier rein kopieren...")
 
     col_actions1, col_actions2 = st.columns([1, 1])
@@ -110,59 +108,52 @@ if check_password():
         if st.button("KI-Formatierung & Speichern"):
             if neues_rezept and client:
                 with st.spinner("Rezept wird formatiert..."):
-                    success = False
-                    for i in range(5):
-                        try:
-                            # Prompt wurde basierend auf dem Nutzerbeispiel verschärft
-                            prompt = f"""
-                            Du bist ein präziser Koch-Assistent. Formatiere den Input STRENG nach diesem Schema:
-                            
-                            {{
-                              "titel": "Kurzer Titel (max 4 Wörter)",
-                              "text": "## Titel\\n**Zutaten:**\\n* Zutat 1\\n* Zutat 2\\n\\n**Zubereitung:**\\n1. Schritt 1\\n2. Schritt 2"
-                            }}
+                    try:
+                        # Prompt mit dem exakten Wunschformat
+                        prompt = f"""
+                        Du bist ein präziser Koch-Assistent. Formatiere diesen Text zu einem kompakten Rezept. Formatiere den Input nach diesem Schema:
+                        
+                        {{
+                          "titel": "Kurzer Titel (max 4 Wörter)",
+                          "text": "## Titel\\n\\n**Zutaten:**\\n* Zutat 1\\n* Zutat 2\\n\\n**Zubereitung:**\\n1. Schritt 1\\n2. Schritt 2"
+                        }}
 
-                            REGELN:
-                            - Antworte NUR mit validem JSON.
-                            - Formatiere diesen Text zu einem kompakten Rezept.
-                            - Kurzer Titel (max 4 Wörter), keine Floskeln am Ende, Markdown Struktur.
-                            - Nutze EXAKT die Überschriften '**Zutaten:**' und '**Zubereitung:**' (fett mit Doppelpunkt).
-                            - Nutze '*' für die Zutatenliste und Zahlen '1.', '2.' für die Zubereitungsschritte.
-                            - Keine Sätze oder Kommentare am Ende, wie Guten Appetit.
+                        REGELN:
+                        - Antworte NUR mit validem JSON.
+                        - Nutze EXAKT die Überschriften '**Zutaten:**' und '**Zubereitung:**' (fett mit Doppelpunkt).
+                        - Kurzer Titel (max 4 Wörter), keine Floskeln am Ende, Markdown Struktur.
+                        - Nutze '*' für die Zutatenliste und Zahlen '1.', '2.' für die Zubereitungsschritte.
+                        - Keine Floskeln wie 'Guten Appetit' oder Einleitungssätze.
 
-                            INPUT:
-                            {neues_rezept}
-                            """
-                            
-                            response = client.models.generate_content(
-                                model='gemini-2.5-flash-preview-09-2025', 
-                                contents=prompt
-                            )
-                            
-                            raw_text = response.text.strip()
-                            if "```json" in raw_text:
-                                raw_text = raw_text.split("```json")[1].split("```")[0].strip()
-                            elif "```" in raw_text:
-                                raw_text = raw_text.split("```")[1].split("```")[0].strip()
-                            
-                            rezept_daten = json.loads(raw_text)
-                            
-                            if supabase_url:
-                                url = f"{supabase_url}/rest/v1/rezepte"
-                                db_res = requests.post(url, headers=supabase_headers, json=rezept_daten)
-                                if db_res.status_code in [200, 201]:
-                                    lade_rezepte()
-                                    st.success("KI hat das Rezept perfekt serviert!")
-                                    st.rerun()
-                                    break
-                        except Exception as e:
-                            if "429" in str(e):
-                                wait = (2 ** i) + 1
-                                time.sleep(wait)
-                                continue
-                            else:
-                                st.error(f"KI-Fehler: {e}")
-                                break
+                        INPUT:
+                        {neues_rezept}
+                        """
+                        
+                        response = client.models.generate_content(
+                            model='gemini-2.5-flash-preview-09-2025', 
+                            contents=prompt
+                        )
+                        
+                        raw_text = response.text.strip()
+                        if "```json" in raw_text:
+                            raw_text = raw_text.split("```json")[1].split("```")[0].strip()
+                        elif "```" in raw_text:
+                            raw_text = raw_text.split("```")[1].split("```")[0].strip()
+                        
+                        rezept_daten = json.loads(raw_text)
+                        
+                        if supabase_url:
+                            url = f"{supabase_url}/rest/v1/rezepte"
+                            db_res = requests.post(url, headers=supabase_headers, json=rezept_daten)
+                            if db_res.status_code in [200, 201]:
+                                lade_rezepte()
+                                st.success("KI hat das Rezept perfekt serviert!")
+                                st.rerun()
+                    except Exception as e:
+                        if "429" in str(e):
+                            st.error("Tageslimit erreicht. Bitte 'Direkt speichern' nutzen.")
+                        else:
+                            st.error(f"Fehler: {e}")
             else:
                 st.warning("Bitte erst Text eingeben.")
 
@@ -181,7 +172,7 @@ if check_password():
                         st.success("Manuell gespeichert!")
                         st.rerun()
             else:
-                st.warning("Kein Text zum Speichern vorhanden.")
+                st.warning("Kein Text vorhanden.")
 
     st.divider()
 
@@ -192,16 +183,20 @@ if check_password():
             titel = rezept.get('titel', 'Unbekannt')
             inhalt = rezept.get('text', '')
 
+            # Eindeutige Keys basierend auf der DB-ID statt dem Listen-Index
+            edit_key = f"edit_state_{db_id}"
+            del_key = f"del_state_{db_id}"
+
             with st.expander(titel):
-                edit_key = f"edit_{i}"
                 if edit_key not in st.session_state: st.session_state[edit_key] = False
+                if del_key not in st.session_state: st.session_state[del_key] = False
 
                 if st.session_state[edit_key]:
-                    n_titel = st.text_input("Titel bearbeiten:", value=titel, key=f"ti_{i}")
-                    n_text = st.text_area("Inhalt bearbeiten:", value=inhalt, height=250, key=f"te_{i}")
+                    n_titel = st.text_input("Titel bearbeiten:", value=titel, key=f"ti_{db_id}")
+                    n_text = st.text_area("Inhalt bearbeiten:", value=inhalt, height=250, key=f"te_{db_id}")
                     c1, c2 = st.columns([1, 1])
                     with c1:
-                        if st.button("💾 Speichern", key=f"s_{i}"):
+                        if st.button("💾 Speichern", key=f"s_{db_id}"):
                             if supabase_url and db_id:
                                 url = f"{supabase_url}/rest/v1/rezepte?id=eq.{db_id}"
                                 requests.patch(url, headers=supabase_headers, json={"titel": n_titel, "text": n_text})
@@ -209,37 +204,37 @@ if check_password():
                                 st.session_state[edit_key] = False
                                 st.rerun()
                     with c2:
-                        if st.button("Abbrechen", key=f"c_{i}"):
+                        if st.button("Abbrechen", key=f"c_{db_id}"):
                             st.session_state[edit_key] = False
                             st.rerun()
                 else:
                     st.markdown(inhalt)
                     
-                    del_key = f"del_{i}"
-                    if del_key not in st.session_state: st.session_state[del_key] = False
-
                     if st.session_state[del_key]:
-                        st.warning("Löschen bestätigen?")
+                        st.warning("Wirklich löschen?")
                         dc1, dc2 = st.columns([1, 1])
                         with dc1:
-                            if st.button("Ja, löschen", key=f"y_{i}"):
+                            if st.button("Ja, löschen", key=f"y_{db_id}"):
                                 if supabase_url and db_id:
                                     url = f"{supabase_url}/rest/v1/rezepte?id=eq.{db_id}"
                                     requests.delete(url, headers=supabase_headers)
+                                    # Status-Keys aufräumen
+                                    if edit_key in st.session_state: del st.session_state[edit_key]
+                                    if del_key in st.session_state: del st.session_state[del_key]
                                     lade_rezepte()
                                     st.rerun()
                         with dc2:
-                            if st.button("Nein", key=f"n_{i}"):
+                            if st.button("Nein", key=f"n_{db_id}"):
                                 st.session_state[del_key] = False
                                 st.rerun()
                     else:
                         b1, b2, _ = st.columns([1, 1, 3])
                         with b1:
-                            if st.button("✎", key=f"eb_{i}"):
+                            if st.button("✎", key=f"eb_{db_id}"):
                                 st.session_state[edit_key] = True
                                 st.rerun()
                         with b2:
-                            if st.button("🗑\uFE0E", key=f"db_{i}"):
+                            if st.button("🗑\uFE0E", key=f"db_{db_id}"):
                                 st.session_state[del_key] = True
                                 st.rerun()
     else:
