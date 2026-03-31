@@ -248,7 +248,7 @@ if check_password():
                             st.rerun()
                     with b3:
                         # Logik für das Verschieben zwischen den Ordnern
-                        btn_label = "↑ Zurück zu Kochen" if is_backen else "↓ In 'Backen' verschieben"
+                        btn_label = "↑" if is_backen else "↓"
                         ziel_kategorie = "Allgemein" if is_backen else "Backen"
                         
                         if st.button(btn_label, key=f"mv_{db_id}"):
@@ -271,7 +271,7 @@ if check_password():
         st.write("") # Etwas Abstand
         
         # 2. Backen-Ordner anzeigen
-        with st.expander("🍰 Backen-Ordner", expanded=False):
+        with st.expander("Backen", expanded=False):
             if not rezepte_backen:
                 st.info("Noch keine Backrezepte vorhanden.")
             else:
