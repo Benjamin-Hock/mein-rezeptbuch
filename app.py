@@ -196,7 +196,7 @@ if check_password():
                     n_text = st.text_area("Inhalt bearbeiten:", value=inhalt, height=250, key=f"te_{db_id}")
                     c1, c2 = st.columns([1, 1])
                     with c1:
-                        if st.button("💾 Speichern", key=f"s_{db_id}"):
+                        if st.button("Speichern", key=f"s_{db_id}"):
                             if supabase_url and db_id:
                                 url = f"{supabase_url}/rest/v1/rezepte?id=eq.{db_id}"
                                 requests.patch(url, headers=supabase_headers, json={"titel": n_titel, "text": n_text})
