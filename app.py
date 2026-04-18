@@ -1,35 +1,22 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 from google import genai
 import json
-import requests
-import time
+import pandas as pd
+from datetime import datetime
+import uuid
 
 # Seiten-Konfiguration
 st.set_page_config(page_title="Mein Rezeptbuch", page_icon="🍳")
 
-# Einfache Passwort-Abfrage für den privaten Zugriff
+# Passwort-Abfrage
 def check_password():
-    """Prüft, ob das korrekte Passwort eingegeben wurde."""
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
-
     if st.session_state["password_correct"]:
         return True
 
-    st.markdown("""
-        <style>
-        .klassische-ueberschrift {
-            font-family: 'Times New Roman', Times, serif;
-            font-size: 3rem;
-            font-weight: bold;
-            color: #2e2e2e;
-            text-align: center;
-            margin-top: 50px;
-        }
-        </style>
-        <div class="klassische-ueberschrift">Privates Rezeptbuch</div>
-    """, unsafe_allow_html=True)
-    
+    st.markdown('<div style="text-align:center; margin-top:50px; font-family:serif; font-size:3rem; font-weight:bold;">Privates Rezeptbuch</div>', unsafe_allow_html=True)
     password = st.text_input("Bitte Passwort eingeben:", type="password")
     if st.button("Anmelden"):
         if password == st.secrets.get("APP_PASSWORD", "admin"):
@@ -39,244 +26,168 @@ def check_password():
             st.error("Falsches Passwort")
     return False
 
-# Hauptprogramm nach Login
 if check_password():
-    # Client mit dem API-Key initialisieren
+    # Verbindung zu Google Sheets aufbauen
+    conn = st.connection("gsheets", type=GSheetsConnection)
+
+    # Gemini Client initialisieren
     try:
         client = genai.Client(api_key=st.secrets.get("GEMINI_API_KEY", ""))
-    except Exception as e:
-        st.error("Fehler: API-Key konnte nicht gefunden werden.")
+    except:
         client = None
 
-    # Supabase-Zugangsdaten laden
-    try:
-        supabase_url = st.secrets["SUPABASE_URL"]
-        supabase_key = st.secrets["SUPABASE_KEY"]
-        supabase_headers = {
-            "apikey": supabase_key,
-            "Authorization": f"Bearer {supabase_key}",
-            "Content-Type": "application/json",
-            "Prefer": "return=representation"
-        }
-    except Exception as e:
-        st.error("Fehler: Supabase-Zugangsdaten fehlen.")
-        supabase_url = None
-        supabase_key = None
+    def lade_daten():
+        # Liest das Tabellenblatt 'rezepte' ein
+        # ttl="0" verhindert das Caching, damit immer die neuesten Daten geladen werden
+        try:
+            return conn.read(worksheet="rezepte", ttl="0")
+        except Exception as e:
+            st.error("Fehler beim Laden der Tabelle. Bitte Freigabe und Namen des Tabellenblatts prüfen.")
+            return pd.DataFrame()
 
-    # Rezepte aus der Datenbank abrufen
-    def lade_rezepte():
-        if supabase_url and supabase_key:
-            try:
-                url = f"{supabase_url}/rest/v1/rezepte?select=*&order=created_at.desc"
-                response = requests.get(url, headers=supabase_headers)
-                if response.status_code == 200:
-                    st.session_state.rezepte = response.json()
-                else:
-                    st.session_state.rezepte = []
-            except Exception as e:
-                st.session_state.rezepte = []
-        else:
-            st.session_state.rezepte = []
+    def speichere_daten(df):
+        # Aktualisiert die gesamte Tabelle
+        conn.update(worksheet="rezepte", data=df)
 
-    if 'rezepte' not in st.session_state:
-        lade_rezepte()
+    # Daten initial laden
+    data = lade_daten()
 
-    # Optische Gestaltung
-    st.markdown("""
-        <style>
-        .klassische-ueberschrift {
-            font-family: 'Times New Roman', Times, serif;
-            font-size: 3.5rem;
-            font-weight: bold;
-            color: #2e2e2e;
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        .stButton > button {
-            width: 100%;
-            border-radius: 5px;
-        }
-        </style>
-        <div class="klassische-ueberschrift">Mein Rezeptbuch</div>
-    """, unsafe_allow_html=True)
+    st.markdown('<div style="text-align:center; margin-bottom:20px; font-family:serif; font-size:3.5rem; font-weight:bold;">Mein Rezeptbuch</div>', unsafe_allow_html=True)
 
     neues_rezept = st.text_area("Neues Rezept eintragen:", height=150, placeholder="Zutaten und Schritte hier rein kopieren...")
 
     col_actions1, col_actions2 = st.columns([1, 1])
     
+    # Hilfsfunktion zum Hinzufügen einer neuen Zeile
+    def rezept_hinzufuegen(titel, text, kategorie="Allgemein"):
+        neu = pd.DataFrame([{
+            "id": str(uuid.uuid4()),
+            "titel": titel,
+            "text": text,
+            "kategorie": kategorie,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }])
+        
+        # Neue Daten oben anfügen (sofern 'data' nicht leer ist)
+        if not data.empty:
+            # Spaltenreihenfolge an die bestehende Tabelle anpassen
+            neu = neu.reindex(columns=data.columns)
+            updated_df = pd.concat([neu, data], ignore_index=True)
+        else:
+            updated_df = neu
+            
+        speichere_daten(updated_df)
+        st.rerun()
+
     with col_actions1:
         if st.button("KI-Formatierung & Speichern"):
             if neues_rezept and client:
                 with st.spinner("Rezept wird formatiert..."):
                     try:
-                        # Prompt mit dem exakten Wunschformat
                         prompt = f"""
-                        Du bist ein präziser Koch-Assistent. Formatiere diesen Text zu einem kompakten Rezept. Formatiere den Input nach diesem Schema:
-                        
+                        Du bist ein präziser Koch-Assistent. Formatiere diesen Text zu einem kompakten Rezept. 
+                        Antworte NUR mit validem JSON:
                         {{
-                          "titel": "Kurzer Titel (max 4 Wörter)",
-                          "text": "## Titel\\n\\n**Zutaten:**\\n* Zutat 1\\n* Zutat 2\\n\\n**Zubereitung:**\\n1. Schritt 1\\n2. Schritt 2"
+                          "titel": "Kurzer Titel", 
+                          "text": "## Titel\\n\\n**Zutaten:**\\n* ...\\n\\n**Zubereitung:**\\n1. ..."
                         }}
-
-                        REGELN:
-                        - Antworte NUR mit validem JSON.
-                        - Nutze EXAKT die Überschriften '## Titel', '**Zutaten:**' und '**Zubereitung:**' (fett mit Doppelpunkt).
-                        - Kurzer Titel (max 4 Wörter), keine Floskeln am Ende, Markdown Struktur.
-                        - Nutze '*' für die Zutatenliste und Zahlen '1.', '2.' für die Zubereitungsschritte.
-                        - Keine Floskeln wie 'Guten Appetit' oder Einleitungssätze.
-
-                        INPUT:
-                        {neues_rezept}
+                        INPUT: {neues_rezept}
                         """
-                        
-                        response = client.models.generate_content(
-                            model='gemini-2.5-flash', 
-                            contents=prompt
-                        )
-                        
+                        response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
                         raw_text = response.text.strip()
-                        if "```json" in raw_text:
+                        
+                        # JSON Extraktion
+                        if "```json" in raw_text: 
                             raw_text = raw_text.split("```json")[1].split("```")[0].strip()
                         elif "```" in raw_text:
                             raw_text = raw_text.split("```")[1].split("```")[0].strip()
-                        
-                        rezept_daten = json.loads(raw_text)
-                        
-                        # Neue Rezepte landen standardmäßig in der Kategorie 'Allgemein'
-                        rezept_daten["kategorie"] = "Allgemein"
-                        
-                        if supabase_url:
-                            url = f"{supabase_url}/rest/v1/rezepte"
-                            db_res = requests.post(url, headers=supabase_headers, json=rezept_daten)
-                            if db_res.status_code in [200, 201]:
-                                lade_rezepte()
-                                st.success("KI hat das Rezept perfekt serviert!")
-                                st.rerun()
+                            
+                        res_json = json.loads(raw_text)
+                        rezept_hinzufuegen(res_json["titel"], res_json["text"])
+                        st.success("KI hat das Rezept gespeichert!")
                     except Exception as e:
-                        if "429" in str(e):
-                            st.error("Tageslimit erreicht. Bitte 'Direkt speichern' nutzen.")
-                        else:
-                            st.error(f"Fehler: {e}")
+                        st.error(f"Fehler bei der KI-Generierung: {e}")
             else:
-                st.warning("Bitte erst Text eingeben.")
+                st.warning("Bitte erst einen Text eingeben.")
 
     with col_actions2:
         if st.button("Direkt speichern"):
             if neues_rezept:
-                zeilen = neues_rezept.split('\n')
-                titel_manuell = zeilen[0][:30] if zeilen else "Neues Rezept"
-                # Auch hier Kategorie setzen
-                rezept_daten = {"titel": titel_manuell, "text": neues_rezept, "kategorie": "Allgemein"}
-                
-                if supabase_url:
-                    url = f"{supabase_url}/rest/v1/rezepte"
-                    db_res = requests.post(url, headers=supabase_headers, json=rezept_daten)
-                    if db_res.status_code in [200, 201]:
-                        lade_rezepte()
-                        st.success("Manuell gespeichert!")
-                        st.rerun()
+                titel = neues_rezept.split('\n')[0][:30]
+                rezept_hinzufuegen(titel, neues_rezept)
+                st.success("Manuell gespeichert!")
             else:
                 st.warning("Kein Text vorhanden.")
 
     st.divider()
 
-    # --- Hilfsfunktion zum Anzeigen eines einzelnen Rezepts ---
-    def zeige_rezept(rezept, is_backen=False):
-        db_id = rezept.get('id')
-        titel = rezept.get('titel', 'Unbekannt')
-        inhalt = rezept.get('text', '')
+    # Rezepte anzeigen
+    if not data.empty:
+        # Fehlende Kategorien auffangen, falls durch CSV-Import Lücken entstanden sind
+        if "kategorie" not in data.columns:
+            data["kategorie"] = "Allgemein"
+        data["kategorie"] = data["kategorie"].fillna("Allgemein")
 
-        # Eindeutige Keys basierend auf der DB-ID
-        edit_key = f"edit_state_{db_id}"
-        del_key = f"del_state_{db_id}"
+        # Filter für Ordner-Logik
+        rezepte_allgemein = data[data["kategorie"] != "Backen"]
+        rezepte_backen = data[data["kategorie"] == "Backen"]
 
-        with st.expander(titel):
-            if edit_key not in st.session_state: st.session_state[edit_key] = False
-            if del_key not in st.session_state: st.session_state[del_key] = False
-
-            # Bearbeitungsmodus
-            if st.session_state[edit_key]:
-                n_titel = st.text_input("Titel bearbeiten:", value=titel, key=f"ti_{db_id}")
-                n_text = st.text_area("Inhalt bearbeiten:", value=inhalt, height=250, key=f"te_{db_id}")
-                c1, c2 = st.columns([1, 1])
-                with c1:
-                    if st.button("Speichern", key=f"s_{db_id}"):
-                        if supabase_url and db_id:
-                            url = f"{supabase_url}/rest/v1/rezepte?id=eq.{db_id}"
-                            requests.patch(url, headers=supabase_headers, json={"titel": n_titel, "text": n_text})
-                            lade_rezepte()
-                            st.session_state[edit_key] = False
-                            st.rerun()
-                with c2:
-                    if st.button("Abbrechen", key=f"c_{db_id}"):
+        def render_liste(df_subset, is_backen_folder=False):
+            for _, row in df_subset.iterrows():
+                rid = str(row["id"])
+                titel = str(row["titel"])
+                text = str(row["text"])
+                
+                with st.expander(titel):
+                    # Bearbeitungs-Status pro ID
+                    edit_key = f"edit_{rid}"
+                    if edit_key not in st.session_state: 
                         st.session_state[edit_key] = False
-                        st.rerun()
-            
-            # Anzeigemodus
-            else:
-                st.markdown(inhalt)
-                
-                # Löschen bestätigen
-                if st.session_state[del_key]:
-                    st.warning("Wirklich löschen?")
-                    dc1, dc2 = st.columns([1, 1])
-                    with dc1:
-                        if st.button("Ja, löschen", key=f"y_{db_id}"):
-                            if supabase_url and db_id:
-                                url = f"{supabase_url}/rest/v1/rezepte?id=eq.{db_id}"
-                                requests.delete(url, headers=supabase_headers)
-                                # Status-Keys aufräumen
-                                if edit_key in st.session_state: del st.session_state[edit_key]
-                                if del_key in st.session_state: del st.session_state[del_key]
-                                lade_rezepte()
-                                st.rerun()
-                    with dc2:
-                        if st.button("Nein", key=f"n_{db_id}"):
-                            st.session_state[del_key] = False
-                            st.rerun()
-                
-                # Standard Aktions-Buttons
-                else:
-                    b1, b2, b3 = st.columns([1, 1, 2])
-                    with b1:
-                        if st.button("✎", key=f"eb_{db_id}"):
-                            st.session_state[edit_key] = True
-                            st.rerun()
-                    with b2:
-                        if st.button("🗑\uFE0E", key=f"db_{db_id}"):
-                            st.session_state[del_key] = True
-                            st.rerun()
-                    with b3:
-                        # Logik für das Verschieben zwischen den Ordnern
-                        btn_label = "↑" if is_backen else "↓"
-                        ziel_kategorie = "Allgemein" if is_backen else "Backen"
+
+                    if st.session_state[edit_key]:
+                        n_titel = st.text_input("Titel:", value=titel, key=f"ti_{rid}")
+                        n_text = st.text_area("Inhalt:", value=text, height=250, key=f"te_{rid}")
                         
-                        if st.button(btn_label, key=f"mv_{db_id}"):
-                            if supabase_url and db_id:
-                                url = f"{supabase_url}/rest/v1/rezepte?id=eq.{db_id}"
-                                requests.patch(url, headers=supabase_headers, json={"kategorie": ziel_kategorie})
-                                lade_rezepte()
+                        c1, c2 = st.columns([1, 1])
+                        with c1:
+                            if st.button("Übernehmen", key=f"save_{rid}"):
+                                data.loc[data["id"] == rid, ["titel", "text"]] = [n_titel, n_text]
+                                speichere_daten(data)
+                                st.session_state[edit_key] = False
+                                st.rerun()
+                        with c2:
+                            if st.button("Abbrechen", key=f"cancel_{rid}"):
+                                st.session_state[edit_key] = False
+                                st.rerun()
+                    else:
+                        st.markdown(text)
+                        b1, b2, b3 = st.columns([1, 1, 2])
+                        with b1:
+                            if st.button("✎", key=f"eb_{rid}"):
+                                st.session_state[edit_key] = True
+                                st.rerun()
+                        with b2:
+                            if st.button("🗑", key=f"db_{rid}"):
+                                data_neu = data[data["id"] != rid]
+                                speichere_daten(data_neu)
+                                st.rerun()
+                        with b3:
+                            ziel = "Allgemein" if is_backen_folder else "Backen"
+                            label = "↑ Kochen" if is_backen_folder else "↓ Backen"
+                            if st.button(label, key=f"mv_{rid}"):
+                                data.loc[data["id"] == rid, "kategorie"] = ziel
+                                speichere_daten(data)
                                 st.rerun()
 
-    # --- Anzeige der Rezepte nach Kategorien getrennt ---
-    if st.session_state.rezepte:
-        # Rezepte sortieren
-        rezepte_allgemein = [r for r in st.session_state.rezepte if r.get('kategorie') != 'Backen']
-        rezepte_backen = [r for r in st.session_state.rezepte if r.get('kategorie') == 'Backen']
-
-        # 1. Normale Rezepte anzeigen
-        for rezept in rezepte_allgemein:
-            zeige_rezept(rezept, is_backen=False)
-            
-        st.write("") # Etwas Abstand
+        # Erst die normalen Rezepte rendern
+        render_liste(rezepte_allgemein)
         
-        # 2. Backen-Ordner anzeigen
-        with st.expander("Backen", expanded=False):
-            if not rezepte_backen:
+        # Dann den Backen-Ordner rendern
+        st.write("")
+        with st.expander("🍰 Backen-Ordner", expanded=False):
+            if rezepte_backen.empty:
                 st.info("Noch keine Backrezepte vorhanden.")
             else:
-                for rezept in rezepte_backen:
-                    zeige_rezept(rezept, is_backen=True)
-                    
+                render_liste(rezepte_backen, is_backen_folder=True)
     else:
-        st.info("Noch keine Rezepte vorhanden.")
+        st.info("Keine Rezepte gefunden.")
